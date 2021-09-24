@@ -1,16 +1,20 @@
-import numpy as np
 import re
-from common.structures.band import Band
-from common.structures.site import Site
-from greedy_max.category import Category
-from common.structures.instrument import Instrument
 from typing import Dict, List
+
+import numpy as np
+
 from astropy.units.quantity import Quantity
 import astropy.units as u
+
+from greedy_max.category import Category
+from common.structures.band import Band
 from common.structures.conditions import SkyConditions
+from common.structures.instrument import Instrument
 from common.structures.elevation import ElevationConstraints
+from common.structures.site import Site
 from common.structures.target import Target
 from common.structures.too_type import ToOType
+
 
 class Observation: 
     """

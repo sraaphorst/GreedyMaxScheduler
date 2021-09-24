@@ -1,4 +1,5 @@
 import logging
+import os
 
 from collector import Collector
 import collector.vskyutil as vs
@@ -21,6 +22,7 @@ from common.structures.site import Site
 from resource_mock.resources import Resources
 
 from astropy.coordinates import SkyCoord, Angle
+from astropy.time import Time
 import astropy.units as u
 
 import multiprocessing
@@ -31,16 +33,21 @@ from typing import List, NoReturn, Dict, Set, Iterable
 
 
 class Selector:
-
-    def __init__(self, collector: Collector, sites=None, times=None, time_range=None, dt=1.0 * u.min) -> None:
+    # TODO: Unsure of what type times is supposed to be, as we always set it to None.
+    def __init__(self,
+                 collector: Collector,
+                 sites: frozenset[Site],
+                 times=None,
+                 time_range: Time = None,
+                 time_slot_length: Time = 1.0 * u.min):
         self.sites = sites  # list of EarthLocation objects
         self.time_range = time_range  # Time object, array for visibility start/stop dates
-        self.dt = dt  # time step for times
+        self.time_slot_length = time_slot_length  # time step for times
 
         self.collector = collector
         if times is not None:
             self.times = times
-            self.dt = self.times[0][1] - self.times[0][0]
+            self.time_slot_length = self.times[0][1] - self.times[0][0]
         else:
             self.times = collector.create_time_array()
 
@@ -138,8 +145,12 @@ class Selector:
                           times[0].strftime('%Y%m%d_%H%M') + '-' + times[-1].strftime('%Y%m%d_%H%M') + '.eph'
 
                 try:
-                    time, ra, dec = horizons.Coordinates(hzname, times[0], times[-1], step='1m', \
-                                                         file=ephem_dir + '/' + ephname, overwrite=overwrite)
+                    time, ra, dec = horizons.Coordinates(hzname,
+                                                         times[0],
+                                                         times[-1],
+                                                         step='1m',
+                                                         file=os.path.join(ephem_dir, ephname),
+                                                         overwrite=overwrite)
                 except Exception:
                     print('Horizons query failed for ' + des)
                     coord = None
@@ -177,7 +188,7 @@ class Selector:
                 sbcond = sb.sb_to_cond(skyb)
 
             # Select where sky brightness and elevation constraints are met
-            # Evenutally want to allow some observations, e.g. calibration, in twilight
+            # Eventually want to allow some observations, e.g. calibration, in twilight
             ix = np.where(np.logical_and(sbcond <= conditions.sb,
                                          np.logical_and(sunalt <= -12. * u.deg,
                                                         np.logical_and(
@@ -423,7 +434,8 @@ class Selector:
 
         return visits
 
-    def select(self, visits: List[Visit],
+    def select(self,
+               visits: List[Visit],
                inight: int,
                site: Site,
                actual_conditions: Conditions,
@@ -517,7 +529,7 @@ class Selector:
                                                            negative_hour_angle,
                                                            too_status)
 
-                            # TODO: wind_conditions may not be initialized by this point.
+                            # TODO ERROR: wind_conditions may not be initialized by this point.
                             visit.score = wind_conditions * visit.score * match
 
                     else:
@@ -538,6 +550,8 @@ class Selector:
             for visit in self.selection[site]:
                 print(visit)
 
+    # TODO: We should probably be using enums for some of these things: I'm just not currently sure which, but
+    # TODO: the overuse of strings is not maintainable. This is a long-term goal.
     @staticmethod
     def has_complementary_mode(obs: Observation, site: Site) -> tuple[bool, str]:
         """

@@ -48,4 +48,3 @@ class Resources:
         elif '-' in fpu_mask:
             barcode = Resources._decode_mask(fpu_mask)
         return barcode and barcode in self.fpur[site]
-
