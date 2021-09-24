@@ -47,7 +47,7 @@ class Ranker:
                     elif tag == 'asteroid':
                         hzname = 'DES=' + des + ';'
                     else:
-                        hzname = hz.GetHorizonId(des)
+                        hzname = hz.get_horizon_id(des)
 
                     # File name
                     ephname = ephem_dir + '/' + site.name + '_' + des.replace(' ', '').replace('/', '') + '_' + \

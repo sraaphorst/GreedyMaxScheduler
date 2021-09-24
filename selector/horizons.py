@@ -1,40 +1,27 @@
-#!/usr/bin/env python3
-
-# Horizons API using URLs
-
 import argparse
-import selector.coords as coords
 import datetime
 import dateutil.parser
-import glob
 import logging
-import numpy
-#import odb
 import os
 import requests
-import sys
 
-version = '2015-Jun-17' # Andrew Stephens, beta version
-version = '2016-Aug-25' # AWS, Coordinates now returns a list of dates & coordinates
-version = '2016-Dec-18' # AWS, add Separation query
-version = '2017-Jan-13' # AWS, add AngularSize query
-version = '2017-Jan-21' # astephens, add AngularSizeLatLong query
-version = '2019-Jan-22' # astephens, update to https URL
-version = '2019-Sep-17' # astephens, add airmass to AngularSizeLatLong
-version = '2020-Oct-20' # bmiller, fix Coordinates parsing, add site parameter argument
+import numpy
+
+import selector.coords as coords
+
+
+# version = '2015-Jun-17' # Andrew Stephens, beta version
+# version = '2016-Aug-25' # AWS, Coordinates now returns a list of dates & coordinates
+# version = '2016-Dec-18' # AWS, add Separation query
+# version = '2017-Jan-13' # AWS, add AngularSize query
+# version = '2017-Jan-21' # astephens, add AngularSizeLatLong query
+# version = '2019-Jan-22' # astephens, update to https URL
+# version = '2019-Sep-17' # astephens, add airmass to AngularSizeLatLong
+# version = '2020-Oct-20' # bmiller, fix Coordinates parsing, add site parameter argument
 version = '2020-Oct-21' # bmiller, add file i/o option to Coordinates
-# --------------------------------------------------------------------------------------------------
+
 
 def main(args):
-
-    #if args.debug:
-    #    logger = odb.ConfigureLogging(screenlevel='DEBUG')
-    #else:
-    #    logger = odb.ConfigureLogging(screenlevel='INFO')
-    #logger.debug('odb-new-horizons.py version %s', version)
-
-    #logger.debug('Target = %s', args.target)
-   
     horizons = Horizons(args.site, airmass=args.airmass, daytime=args.daytime)
 
     if 'today' in args.start:
@@ -732,7 +719,7 @@ def FindSubstringsInList(mylist,mystring):
 # Could also be written as: indices = [i for i, s in enumerate(mylist) if 'aa' in s]
 #---------------------------------------------------------------------------------------------------
 
-def GetHorizonId(target):
+def get_horizon_id(target: str) -> str:
     # A not-complete list of solar system major body Horizons IDs
     horiz = {'mercury': '199', 'venus': '299', 'mars': '499', 'jupiter': '599', 'saturn': '699',
              'uranus': '799', 'neptune': '899', 'pluto': '999', 'io': '501'}
@@ -743,13 +730,9 @@ def GetHorizonId(target):
 
     return horizid
 
-#---------------------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(
-        description='Query JPL Horizons database.',
-        epilog='Version: ' + version)
+    parser = argparse.ArgumentParser(description='Query JPL Horizons database.', epilog=f'Version: {version}')
 
     # Required arguments:
     parser.add_argument('target', help='Target name.  If target = "asteroids",\
@@ -769,14 +752,12 @@ if __name__ == '__main__':
 
     # Options requiring values:
     parser.add_argument('--airmass', action='store', type=float, default=3, help='Airmass cutoff [3]')
-    #parser.add_argument('-l', '--location', action='store', type=str, default=3, help='Location {GN,GS}')
+    # parser.add_argument('-l', '--location', action='store', type=str, default=3, help='Location {GN,GS}')
     parser.add_argument('--start', action='store', type=str, default='today', help='Start date [today]')
     parser.add_argument('--end', action='store', type=str, default='tomorrow', help='End date [tomorrow]')
-    parser.add_argument('--step', action='store', type=str, default=None, help='Step size, e.g. "1h". Unitless steps will return N equally spaced points.')
+    parser.add_argument('--step', action='store', type=str, default=None,
+                        help='Step size, e.g. "1h". Unitless steps will return N equally spaced points.')
     parser.add_argument('--site', action='store', type=str, default='GN', help='Gemini site ["GN" or "GS"]')
 
     args = parser.parse_args()
     main(args)
-
-#---------------------------------------------------------------------------------------------------
-

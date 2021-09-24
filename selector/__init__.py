@@ -138,7 +138,7 @@ class Selector:
                 elif tag is TargetTag.Asteroid:
                     hzname = 'DES=' + des + ';'
                 else:
-                    hzname = hz.GetHorizonId(des)
+                    hzname = hz.get_horizon_id(des)
 
                 # File name
                 ephname = usite + '_' + des.replace(' ', '').replace('/', '') + '_' + \
