@@ -1,149 +1,111 @@
-#! /usr/bin/env python
-"""A numpy vectorized version of thorskyutil.py -- utility and miscellaneous time and the sky
-   routines built mostly on astropy.
-"""
-
+# A numpy vectorized version of thorskyutil.py -- utility and miscellaneous time and the sky
+# routines built mostly on astropy.
 # Copyright John Thorstensen, 2018; offered under the GNU Public License 3.0
 # Vectorized by Bryan Miller, Gemini Observatory
 
-import numpy as np
-import astropy.units as u
-from astropy.coordinates import SkyCoord, PrecessedGeocentric, Angle, Longitude, Distance
-from astropy.coordinates import GeocentricTrueEcliptic, FK5
-from astropy.time import Time, TimeDelta
+import logging
 from datetime import datetime, timedelta
 import pkgutil
 
-
-class thorconsts:
-    """Constants that are used here and there.  Some are Quantities,
-    others are just floats. Not all are used.
-
-    The planet-coefs are for series expansions for the phase functions
-    of the planets, used in predicting apparent magnitude.  See code."""
-
-    PI = 3.14159265358979
-    TWOPI = 6.28318530717959
-    PI_OVER_2 = 1.57079632679490  # /* From Abramowitz & Stegun */
-    ARCSEC_IN_RADIAN = 206264.8062471
-    DEG_IN_RADIAN = 57.2957795130823
-    HRS_IN_RADIAN = 3.819718634205
-    KMS_AUDAY = 1731.45683633  # /* km per sec in 1 AU/day */
-    SPEED_OF_LIGHT = 299792.458  # /* in km per sec ... exact. */
-    SS_MASS = 1.00134198  # /* solar system mass in solar units */
-    J2000 = 2451545.  # /* Julian date at standard epoch */
-    J2000_Time = Time(2451545., format='jd')  # J2000 rendered as a Time
-    SEC_IN_DAY = 86400.
-    FLATTEN = 0.003352813  # /* flattening of earth, 1/298.257 */
-    EQUAT_RAD = 6378137. * u.m  # /* equatorial radius of earth, meters */
-    EARTHRAD_IN_AU = 23454.7910556298  # /* number of earth rad in 1 au */
-    ASTRO_UNIT = 1.4959787066e11  # /* 1 AU in meters */
-    RSUN = 6.96000e8  # /* IAU 1976 recom. solar radius, meters */
-    RMOON = 1.738e6  # /* IAU 1976 recom. lunar radius, meters */
-    PLANET_TOL = 3.  # /* flag if nearer than 3 degrees
-    KZEN = 0.172  # V-band zenith extinction for sky-brightness
-
-    ALT15 = 41.7291 * u.deg  # altitude at which true airm = 1.5
-    ALT20 = 29.8796 * u.deg  # same for 2.0
-    ALT30 = 19.278 * u.deg  # and 3.0
-
-    SIDRATE = 1.0027379093  # ratio of sidereal to solar rate
-    SIDDAY = TimeDelta(1., format='jd') / 1.0027379093
-    ZERO_TIMEDELTA = TimeDelta(0., format='jd')
-
-    # list planets so dictionary entries can be called up in order.
-    PLANETNAMES = ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']
-    # Phase brightness coefficients for the inner planets.
-    PLANETPHASECOEFS = {'mercury': (0.013363763741181076, -0.2480840022313796,
-                                    1.6325515091649714, -4.9390499605838665, 7.718379797341275, -6.131445146202686,
-                                    3.7914559630732065, -0.616),
-                        'venus': (
-                        0.09632276402543158, -0.5292390263170846, 1.2103116107350298, -0.05981450198047742, -4.38394),
-                        'mars': (-0.4274213867715291, 1.2988953215615762, -1.601),
-                        'jupiter': (-9.40), 'saturn': (-9.22), 'uranus': (-7.19), 'neptune': (-6.87)}
-    # These are adapted (converted to radian argument) from expressions given
-    # by Mallama, A. Wang, D., and Howard, R. A., Icarus 155, 253 (2002) for Mercury,
-    # Mallama, A. Wang, D., and Howard, R. A. Icarus 182, 10 (2005) for Venus, and
-    # Mallama, A., Icarus 192, 404 (2007) for Mars.  For the outer planets the phase angle
-    # is always nearly zero, so no phase angle correction is applied to Jupiter and further
-    # planets -- their magnitudes are adjusted only for sun-planet and earth-planet inverse square
-    # dimming. No attempt is made to account for the varying aspect of Saturn's rings.
+import astropy.units as u
+from astropy.coordinates import Angle, Distance, EarthLocation, Longitude, PrecessedGeocentric, SkyCoord
+from astropy.coordinates import FK5, GeocentricTrueEcliptic
+from astropy.time import Time, TimeDelta
+import numpy as np
 
 
-def time_rounded_to_minute(tm, sep=' ', incl_date=False, incl_day=False,
-                           named_month=False, incl_year=True):
-    """Takes a datetime and returns a string giving the date correctly rounded to
-    nearest minute.  Calls strftime.
+class ThorConstants:
+    # Julian date at standard epoch
+    J2000 = Time('2000-01-01 12:00').to_value(format='jd')
 
-    Parameters
-    ----------
-    tm : datetime
-    sep : str, default = ' '
-         separator between output fields
-    incl_date : boolean, default = False
-         include calendar date in output
-    incl_day : boolean, default = False
-         include day of week in output string
-    named_month : boolean, default = False
-         output name of month instead of number
-    incl_year : boolean, default = False
-         include year in output string
+
+# class ThorsConstants:
+#     """Constants that are used here and there.  Some are Quantities,
+#     others are just floats. Not all are used.
+#
+#     The planet-coefficients are for series expansions for the phase functions
+#     of the planets, used in predicting apparent magnitude. See code."""
+#
+#     ARCSEC_IN_RADIAN = (1.0 * u.rad).to_value(u.arcsec)
+#     DEG_IN_RADIAN = (1.0 * u.rad).to_value(u.deg)
+#     HRS_IN_RADIAN = (1.0 * u.rad).to_value(u.hourangle)
+#     KMS_AUDAY = (1.0 * u.au / u.day).to_value(1.0 * u.km / u.s)
+#     SPEED_OF_LIGHT = const.c.to_value(u.km / u.s)
+#     SS_MASS = 1.00134198  # /* solar system mass in solar units */
+#     J2000 = 2451545.  # /* Julian date at standard epoch */
+#     J2000_Time = Time(2451545., format='jd')  # J2000 rendered as a Time
+#     SEC_IN_DAY = 86400.
+#     FLATTEN = 0.003352813  # /* flattening of earth, 1/298.257 */
+#     EQUAT_RAD = 6378137. * u.m  # /* equatorial radius of earth, meters */
+#     EARTHRAD_IN_AU = 23454.7910556298  # /* number of earth rad in 1 au */
+#     ASTRO_UNIT = 1.4959787066e11  # /* 1 AU in meters */
+#     RSUN = 6.96000e8  # /* IAU 1976 recom. solar radius, meters */
+#     RMOON = 1.738e6  # /* IAU 1976 recom. lunar radius, meters */
+#     PLANET_TOL = 3.  # /* flag if nearer than 3 degrees
+#     KZEN = 0.172  # V-band zenith extinction for sky-brightness
+#
+#     ALT15 = 41.7291 * u.deg  # altitude at which true airm = 1.5
+#     ALT20 = 29.8796 * u.deg  # same for 2.0
+#     ALT30 = 19.278 * u.deg  # and 3.0
+#
+#     SIDRATE = 1.0027379093  # ratio of sidereal to solar rate
+#     SIDDAY = TimeDelta(1., format='jd') / 1.0027379093
+#     ZERO_TIMEDELTA = TimeDelta(0., format='jd')
+#
+#     # list planets so dictionary entries can be called up in order.
+#     PLANETNAMES = ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']
+#     # Phase brightness coefficients for the inner planets.
+#     PLANETPHASECOEFS = {'mercury': (0.013363763741181076, -0.2480840022313796,
+#                                     1.6325515091649714, -4.9390499605838665,
+#                                     7.718379797341275, -6.131445146202686,
+#                                     3.7914559630732065, -0.616),
+#                         'venus': (0.09632276402543158, -0.5292390263170846,
+#                                   1.2103116107350298, -0.05981450198047742, -4.38394),
+#                         'mars': (-0.4274213867715291, 1.2988953215615762, -1.601),
+#                         'jupiter': (-9.40), 'saturn': (-9.22), 'uranus': (-7.19), 'neptune': (-6.87)}
+#     # These are adapted (converted to radian argument) from expressions given
+#     # by Mallama, A. Wang, D., and Howard, R. A., Icarus 155, 253 (2002) for Mercury,
+#     # Mallama, A. Wang, D., and Howard, R. A. Icarus 182, 10 (2005) for Venus, and
+#     # Mallama, A., Icarus 192, 404 (2007) for Mars.  For the outer planets the phase angle
+#     # is always nearly zero, so no phase angle correction is applied to Jupiter and further
+#     # planets -- their magnitudes are adjusted only for sun-planet and earth-planet inverse square
+#     # dimming. No attempt is made to account for the varying aspect of Saturn's rings.
+
+
+def current_geocentric_frame(time: Time) -> PrecessedGeocentric:
     """
-
-    # To get nearest minute, simply add half a minute to the time
-    # and then format -- this works perfectly in edge cases (e.g.,
-    # 2018-12-31  23:59:31  rounded to nearest minute gives 2019-01-01 00:00)
-
-    tm += timedelta(seconds=30)
-    if incl_date and incl_day:
-        if incl_year:
-            return tm.strftime("%a %Y-%m-%d %H:%M")
-        else:
-            return tm.strftime("%a %m-%d %H:%M")
-    elif incl_date:
-        if incl_year:
-            return tm.strftime("%Y-%m-%d %H:%M")
-        else:
-            return tm.strftime("%m-%d %H:%M")
-    elif incl_day:
-        return tm.strftime("%a %H:%M")
-    else:
-        return tm.strftime("%H:%M")
-
-
-def currentgeocentframe(time):
-    """Returns a PrecessedGeocentric frame for the equinox
-    spcified by the time.
+    Returns a PrecessedGeocentric frame for the equinox
+    specified by the time.
 
     Parameters
     ----------
-
     time : astropy Time, if an array then the first entry is used
 
     Returns
-
+    -------
     an astropy PrecessedGeocentric time.
     """
     # Generate a PrecessedGeocentric frame for the current equinox.
-    time_ep = 2000. + (np.asarray(time.jd) - thorconsts.J2000) / 365.25
+    time_ep = 2000. + (np.asarray(time.jd) - ThorConstants.J2000) / 365.25
     if time_ep.ndim == 0:
         time_ep = time_ep[None]  # Makes 1D
-    eq = Time("J{:7.2f}".format(time_ep[0]))
-    # print(eq)
+    eq = Time(f'J{time_ep[0]:7.2f}')
     return PrecessedGeocentric(equinox=eq)
 
 
-def currentFK5frame(time):
-    """Returns an FK5 frame for the equinox of the time.
+def current_fk5_frame(time: Time) -> FK5:
+    """
+    Returns an FK5 frame for the equinox of the time.
 
     Parameters
     ----------
-
     time : astropy Time, if an array then the first entry is used
 
-    Returns: an astropy coordinate frame.
+    Returns
+    -------
+    an astropy coordinate frame.
     """
-    time_ep = 2000. + (np.asarray(time.jd) - thorconsts.J2000) / 365.25
+    time_ep = 2000. + (np.asarray(time.jd) - ThorConstants.J2000) / 365.25
     if time_ep.ndim == 0:
         time_ep = time_ep[None]  # Makes 1D
     eq = Time("J{:7.2f}".format(time_ep[0]))
@@ -152,19 +114,19 @@ def currentFK5frame(time):
     return FK5(equinox=eq)
 
 
-def min_max_alt(lat, dec):
+def min_max_alt(lat: Angle, dec: Angle):
     """Finds the mimimum and maximum altitudes of a celestial location.
 
     Parameters
     ----------
     lat : astropy Angle
         Latitude of site.
-    dec : astropy Angle, float or array
+    dec : astropy Angle
         declination of the object.
 
-    Returns :
-
-    (minalt, maxalt) : both Astropy Angle
+    Returns
+    -------
+    minalt, maxalt : both Astropy Angle
         tuple of minimum and maximum altitudes.
     """
 
@@ -192,14 +154,14 @@ def min_max_alt(lat, dec):
         minalt[ii] = np.arcsin(x[ii])
 
     if scalar_input:
-        # return (Angle(np.squeeze(minalt), unit = u.rad), Angle(np.squeeze(maxalt), unit = u.rad))
         minalt = np.squeeze(minalt)
         maxalt = np.squeeze(maxalt)
     return Angle(minalt, unit=u.rad), Angle(maxalt, unit=u.rad)
 
 
-def ha_alt(dec, lat, alt):
-    """Return an Angle giving the hour angle (from spherical astronomy, east
+def ha_alt(dec: Angle, lat: Angle, alt: Angle) -> Angle:
+    """
+    Return an Angle giving the hour angle (from spherical astronomy, east
     or west of meridian, not the u.hourangle from astropy) at which
     the declination dec reaches altitude alt.
 
@@ -207,24 +169,18 @@ def ha_alt(dec, lat, alt):
     If always below, -1000 radians.
 
     Parameters :
-    dec : Angle, float or array
+    dec : Angle
        Declination of source.
     lat : Angle
        Latitude of site.
-    alt : Angle, float or array
+    alt : Angle
        Height above horizon for computation.
 
     dec and alt must have the same dimensions
     """
-
-    # Arguments are all angles.
-    # returns hour angle at which object at dec is at altitude alt for a
-    # latitude lat.
-
     dec = np.asarray(dec.to_value(u.rad).data) * u.rad
     alt = np.asarray(alt.to_value(u.rad)) * u.rad
-    # dec = np.asarray(dec.rad) * u.rad
-    # alt = np.asarray(alt.rad) * u.rad
+
     scalar_input = False
     if dec.ndim == 0 and alt.ndim == 0:
         scalar_input = True
@@ -238,8 +194,7 @@ def ha_alt(dec, lat, alt):
     elif len(dec) > 1 and len(alt) == 1:
         alt = alt * np.ones(len(dec))
     elif len(dec) != len(alt):
-        print('Error: dec and alt have incompatible lengths')
-        return
+        raise ValueError(f'Dec ({len(dec)}) and alt ({len(alt)} have incompatible lengths.')
 
     x = np.zeros(len(dec))
     codec = np.zeros(len(dec))
@@ -264,104 +219,14 @@ def ha_alt(dec, lat, alt):
         x[kk] = np.arccos(x[kk])
 
     if scalar_input:
-        # return (Angle(np.squeeze(x), unit = u.rad))
         x = np.squeeze(x)
     return Angle(x, unit=u.rad)
 
 
-# A direct translation of the original, but the subsequent function is simpler
-# def hrs_up(timeup, timedown, evening, morning) :
-#     """returns a TimeDelta giving how long an object is up during the
-#     night, basically the intersection between the interval is's 'up' above
-#     a given altitude, and the interval when it's nighttime.
-#
-#     Checks are implemented for circumpolar objects that can set and come back up.
-#
-#     Parameters
-#     ----------
-#     timeup : astropy Time, can be array
-#         Time at which the object rises above an altitude
-#     timedown : astropy Time, can be array of the same size as timeup
-#         Time at which an object sets below a given altitude
-#     evening :
-#         Time of the beginning of the night
-#     morning :
-#         Time of the ending of the night
-#     """
-#
-#    # all are Times.
-#    #  timeup - when the object rises past a given altitle
-#    #  timedown - when the object sets past a given altitle
-#    #  evening - time of evening twiligt (however defined)
-#    #  morning - time of morning twiligt
-#    # return value will be a TimeDelta
-#
-#     timeup = Time(np.asarray(timeup.jd), format='jd')
-#     scalar_input = False
-#     if timeup.ndim == 0:
-#         timeup = timeup[None]
-#         scalar_input = True
-#     timedown = Time(np.asarray(timedown.jd), format='jd')
-#     if timedown.ndim == 0:
-#         timedown = timedown[None]
-#
-#     if len(timeup) != len(timedown):
-#         print('Error: timeup and timedown must have the same dimensions')
-#         return None
-#
-#     hrsup = TimeDelta(0.0*np.zeros(len(timeup)), format='jd')
-#
-#     ii = np.where(timeup < evening)[0][:] # rises before evening
-#     if len(ii) != 0:
-#         jj = ii[np.where(timedown[ii] > morning)[0][:]]
-#         if len(jj) != 0:
-#              hrsup[jj] = morning - evening
-#
-#         kk = ii[np.where(timedown[ii] > evening)[0][:]]
-#         if len(kk) != 0:
-#             # careful - circumpolar objects can come back up
-#             # a second time before morning.
-#             timeup2 = timeup[kk] + thorconsts.SIDDAY
-#             ll = kk[np.where(timeup2 > morning)[0][:]]
-#             if len(ll) != 0: # usual case - doesn't rise again.
-#                 hrsup[ll] = timedown[ll] - evening
-#             ll = kk[np.where(timeup2 <= morning)[0][:]]
-#             if len(ll) != 0:
-#                 hrsup[ll] = (timedown[ll] - evening) + (morning[ll] - timeup2)
-#
-#         kk = ii[np.where(timedown[ii] <= evening)[0][:]]
-#         if len(kk) != 0:
-#             hrsup[kk] = thorconsts.ZERO_TIMEDELTA
-#
-#     ii = np.where(timedown > morning)[0][:] # still up at morning twi
-#     if len(ii) != 0:
-#         jj = ii[np.where(timeup[ii] > morning)[0][:]]
-#         if len(jj) != 0:
-#             hrsup[jj] = thorconsts.ZERO_TIMEDELTA
-#
-#         kk = ii[np.where(timeup[ii] <= morning)[0][:]]
-#         if len(kk) != 0:
-#             # again an object can be up more than once per night
-#             timedown0 = timedown[kk] - thorconsts.SIDDAY
-#             ll = kk[np.where(timedown0 < evening)[0][:]]
-#             if len(ll) != 0:
-#                 hrsup[ll] = morning - timeup[ll]
-#             ll = kk[np.where(timedown0 >= evening)[0][:]]
-#             if len(ll) != 0:
-#                 hrsup[ll] = (timedown0 - evening) + (morning - timeup[ll])
-#
-#     ii = np.where(np.logical_and(timeup >= evening, timedown <= morning))[0][:]  # up and down the same night.
-#     if len(ii) != 0:
-#         hrsup[ii] = timedown[ii] - timeup[ii]
-#
-#     if scalar_input:
-#         hrsup = np.squeeze(hrsup)
-#     return hrsup
-
-
-def hrs_up(timeup, timedown, evening, morning):
-    """returns a TimeDelta giving how long an object is up during the
-    night, basically the intersection between the interval is's 'up' above
+def hrs_up(timeup: Time, timedown: Time, evening: Time, morning: Time) -> TimeDelta:
+    """
+    Returns a TimeDelta giving how long an object is up during the
+    night, basically the intersection between the interval it's 'up' above
     a given altitude, and the interval when it's nighttime.
 
     Checks are implemented for circumpolar objects that can set and come back up.
@@ -377,14 +242,6 @@ def hrs_up(timeup, timedown, evening, morning):
     morning : astropy Time, can be array of the same size as timeup
         Time of the ending of the night
     """
-
-    # all are Times.
-    #  timeup - when the object rises past a given altitle
-    #  timedown - when the object sets past a given altitle
-    #  evening - time of evening twiligth (however defined)
-    #  morning - time of morning twilight
-    # return value will be a TimeDelta
-
     timeup = Time(np.asarray(timeup.jd), format='jd')
     scalar_input = False
     if timeup.ndim == 0:
@@ -401,8 +258,7 @@ def hrs_up(timeup, timedown, evening, morning):
         morning = morning[None]
 
     if len(timeup) != len(timedown):
-        print('Error: timeup and timedown must have the same dimensions')
-        return None
+        raise ValueError(f'Timeup ({len(timeup)}) and timedown ({len(timedown)}) must have the same dimensions.')
 
     hrsup = TimeDelta(0.0 * np.zeros(len(timeup)), format='jd')
 
@@ -438,19 +294,21 @@ def hrs_up(timeup, timedown, evening, morning):
     return hrsup
 
 
-def lpsidereal(time, location):
+def lpsidereal(time: Time, location: EarthLocation) -> Angle:
     """moderate-precision (1 sec) local sidereal time
 
     Adapted with minimal changes from skycalc routine. Native
     astropy routines are unnecessarily precise for our purposes and
     rather slow.
 
-    Parameters :
+    Parameters
+    ----------
        time : Time
        location : EarthLocation
 
-    Returns:
-       Angle   (sidereal time is the hour angle of the equinox.)
+    Returns
+    -------
+       Angle : sidereal time is the hour angle of the equinox
 
     """
 
@@ -469,7 +327,7 @@ def lpsidereal(time, location):
         jdmid[ii] = jdint[ii] - 0.5
         ut[ii] = jdfrac[ii] + 0.5  # as fraction of a day.
 
-    t = (jdmid - thorconsts.J2000) / 36525.
+    t = (jdmid - ThorConstants.J2000) / 36525.
 
     sid = (24110.54841 + 8640184.812866 * t + 0.093104 * t ** 2 - 6.2e-6 * t ** 3) / 86400.
     # at Greenwich
@@ -683,17 +541,17 @@ def geocent(geolong, geolat, height):
     # Angles and height is assumed to be in meters; returns
     # a triplet of explicit Distances.
 
-    denom = (1. - thorconsts.FLATTEN) * np.sin(geolat)
+    denom = (1. - ThorConstants.FLATTEN) * np.sin(geolat)
     denom = np.cos(geolat) * np.cos(geolat) + denom * denom
     C_geo = 1. / np.sqrt(denom)
-    S_geo = (1. - thorconsts.FLATTEN) * (1. - thorconsts.FLATTEN) * C_geo
-    C_geo = C_geo + height / thorconsts.EQUAT_RAD
+    S_geo = (1. - ThorConstants.FLATTEN) * (1. - ThorConstants.FLATTEN) * C_geo
+    C_geo = C_geo + height / ThorConstants.EQUAT_RAD
     #  deviation from almanac notation -- include height here.
-    S_geo = S_geo + height / thorconsts.EQUAT_RAD
+    S_geo = S_geo + height / ThorConstants.EQUAT_RAD
     # distancemultiplier = Distance(thorconsts.EQUAT_RAD, unit = u.m)
-    x_geo = thorconsts.EQUAT_RAD * C_geo * np.cos(geolat) * np.cos(geolong)
-    y_geo = thorconsts.EQUAT_RAD * C_geo * np.cos(geolat) * np.sin(geolong)
-    z_geo = thorconsts.EQUAT_RAD * S_geo * np.sin(geolat)
+    x_geo = ThorConstants.EQUAT_RAD * C_geo * np.cos(geolat) * np.cos(geolong)
+    y_geo = ThorConstants.EQUAT_RAD * C_geo * np.cos(geolat) * np.sin(geolong)
+    z_geo = ThorConstants.EQUAT_RAD * S_geo * np.sin(geolat)
 
     return x_geo, y_geo, z_geo
 
@@ -721,9 +579,9 @@ def precessmatrix(t1, t2):
 
     # print "t1.jd, thorconsts.J2000",t1.jd,thorconsts.J2000
 
-    ti = (t1.jd - thorconsts.J2000) / 36525.  # * u.d)
+    ti = (t1.jd - ThorConstants.J2000) / 36525.  # * u.d)
     #    print "ti",ti
-    tf = (t2.jd - thorconsts.J2000) / 36525. - ti  # * u.d)
+    tf = (t2.jd - ThorConstants.J2000) / 36525. - ti  # * u.d)
     #    print "tf",tf
 
     zeta = (2306.2181 + 1.39656 * ti + 0.000139 * ti ** 2) * tf + \
@@ -734,9 +592,9 @@ def precessmatrix(t1, t2):
 
     #    print "zeta, z, theta",zeta,z,theta
 
-    zeta = zeta / thorconsts.ARCSEC_IN_RADIAN
-    z = z / thorconsts.ARCSEC_IN_RADIAN
-    theta = theta / thorconsts.ARCSEC_IN_RADIAN
+    zeta = zeta / ThorConstants.ARCSEC_IN_RADIAN
+    z = z / ThorConstants.ARCSEC_IN_RADIAN
+    theta = theta / ThorConstants.ARCSEC_IN_RADIAN
 
     cosz = np.cos(z)
     coszeta = np.cos(zeta)
@@ -1109,7 +967,7 @@ def lpmoon(time, obs):
         jd = jd[None]
         scalar_input = True
 
-    T = (jd - thorconsts.J2000) / 36525.  # jul cent. since J2000.0
+    T = (jd - ThorConstants.J2000) / 36525.  # jul cent. since J2000.0
 
     sid = lpsidereal(time, obs)
     lat = obs.lat
@@ -1156,9 +1014,9 @@ def lpmoon(time, obs):
 
     alpha = np.arctan2(m, l)
     delta = np.arcsin(n)
-    distancemultiplier = Distance(thorconsts.EQUAT_RAD, unit=u.m)
+    distancemultiplier = Distance(ThorConstants.EQUAT_RAD, unit=u.m)
 
-    fr = currentgeocentframe(time)
+    fr = current_geocentric_frame(time)
 
     if scalar_input:
         alpha = np.squeeze(alpha)
@@ -1387,18 +1245,18 @@ def accumoon(time, obs):  # ,geolat,lst) :
     beta = Angle(np.deg2rad(beta), unit=u.rad)
     lambd = Angle(np.deg2rad(lambd), unit=u.rad)
 
-    dist = Distance(1. / np.sin(np.deg2rad(pie)) * thorconsts.EQUAT_RAD)
+    dist = Distance(1. / np.sin(np.deg2rad(pie)) * ThorConstants.EQUAT_RAD)
 
     # place these in a skycoord in ecliptic coords of date.  Handle distance
     # separately since it does not transform properly for some reason.
 
-    eq = 'J{:7.2f}'.format(2000. + (time_ttjd[0] - thorconsts.J2000) / 365.25)
+    eq = 'J{:7.2f}'.format(2000. + (time_ttjd[0] - ThorConstants.J2000) / 365.25)
     fr = GeocentricTrueEcliptic(equinox=eq)
     inecl = SkyCoord(lon=Angle(lambd, unit=u.rad), lat=Angle(beta, unit=u.rad), frame=fr)
 
     # Transform into geocentric equatorial.
 
-    geocen = inecl.transform_to(currentgeocentframe(time))
+    geocen = inecl.transform_to(current_geocentric_frame(time))
 
     # Do the topo correction yourself. First form xyz coords in equatorial syst of date
 
@@ -1432,7 +1290,7 @@ def accumoon(time, obs):  # ,geolat,lst) :
         raout = np.squeeze(raout)
         decout = np.squeeze(decout)
         topodist = np.squeeze(topodist)
-    return SkyCoord(raout, decout, unit=u.rad, frame=currentgeocentframe(time)), topodist
+    return SkyCoord(raout, decout, unit=u.rad, frame=current_geocentric_frame(time)), topodist
 
 
 def lpsun(time):
@@ -1460,7 +1318,7 @@ def lpsun(time):
         jd = jd[None]
         scalar_input = True
 
-    n = jd - thorconsts.J2000  # referred to J2000
+    n = jd - ThorConstants.J2000  # referred to J2000
     L = 280.460 + 0.9856474 * n
     g = np.deg2rad(357.528 + 0.9856003 * n)
     lambd = np.deg2rad(L + 1.915 * np.sin(g) + 0.020 * np.sin(2. * g))
@@ -1473,7 +1331,7 @@ def lpsun(time):
     ra = np.arctan2(y, x)
     dec = np.arcsin(z)
 
-    fr = currentgeocentframe(time)
+    fr = current_geocentric_frame(time)
 
     if scalar_input:
         ra = np.squeeze(ra)
@@ -1787,7 +1645,7 @@ def nightevents(aTime, location, localtzone, verbose=True):
     sunpos = lpsun(aTime)
 
     # allow separate rise and set altitudes for horizon effects
-    horiz = (-0.883 - np.sqrt(2. * location.height / thorconsts.EQUAT_RAD) * (180. / np.pi)) * u.deg
+    horiz = (-0.883 - np.sqrt(2. * location.height / ThorConstants.EQUAT_RAD) * (180. / np.pi)) * u.deg
     # print(horiz)
     setalt = Angle(horiz * np.ones(nt), unit=u.deg)  # zd = 90 deg 50 arcmin
     risealt = Angle(horiz * np.ones(nt), unit=u.deg)  # zd = 90 deg 50 arcmin
@@ -2040,7 +1898,7 @@ def lunskybright(alpha, rho, kzen, altmoon, alt, moondist, sunalt):
         alpham = Angle(180. * u.deg) - alpha[im]
         Zmoon = Angle(90. * u.deg) - altmoon[im]
         Z = Angle(90. * u.deg) - alt[im]
-        norm_moondist = moondist[im] / (60.27 * thorconsts.EQUAT_RAD)  # divide by mean distance
+        norm_moondist = moondist[im] / (60.27 * ThorConstants.EQUAT_RAD)  # divide by mean distance
 
         istar = -0.4 * (3.84 + 0.026 * abs(alpham.deg) + 4.0e-9 * alpham.deg ** 4)  # eqn 20
         #     print "istar",istar, "norm_moondist",norm_moondist
